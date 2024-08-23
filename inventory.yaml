@@ -1,0 +1,21 @@
+---
+all:
+  children:
+    kmaster:
+      hosts:
+        kmaster_control:
+          ansible_host: 
+    node_add:
+      children:
+#        masters:
+#          hosts:
+#            kmaster02:
+#             ansible_host: <địa chỉ của kmaster muốn thêm>
+#            kmaster03:
+#              ansible_host: < địa chỉ của kmaster muốn thêm >
+        workers:
+          hosts:
+            kworker01:
+              ansible_host: 
+#            kworker02:
+#              ansible_host: <địa chỉ của kworker muốn thêm>
