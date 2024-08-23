@@ -1,0 +1,36 @@
+---
+- name: Install requirements
+  hosts: all
+  become: yes
+  roles:
+    - requirement
+    - extend_storage_root
+  vars:
+#    ubuntu_version: xUbuntu_22.04
+#    kubeadm_version: 1.23.1-00
+#    kubectl_version: 1.23.1-00
+#    kubelet_version: 1.23.1-00
+#    crio_version: 1.23
+    kubernetes_version: v1.30
+    project_path: prerelease:/main
+    proxy_env:
+      no_proxy: "10.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,localhost,127.0.0.1"
+      http_proxy: "http://"
+      https_proxy: "http://"
+
+#Nếu tạo một cluster mới thì xóa các command dòng bên dưới, sau đó tại Install requiments thay đổi 'hosts: all'
+
+- name: Create kubernetes cluster
+  host: kmaster_control
+  become: yes
+  roles:
+    - create_cluster
+  vars:
+    control_plane_ip: ""
+    pod_network: "192.168.0.0/16"
+
+- name: Joint node to cluster
+  hosts: kworker01
+#  become: yes
+  roles:
+    - joint_node
