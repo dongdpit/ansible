@@ -1,0 +1,32 @@
+--- 
+- name: Reset existing cluster 
+  shell: kubeadm reset -f 
+- name: Remove .kube in user home directory 
+  shell: rm -rf .kube 
+- name: Remove /etc/kubernetes/manifests directory 
+  shell: rm -rf /etc/kubernetes/manifests 
+- name: Remove /var/lib/etcd directory 
+  shell: rm -rf /var/lib/etcd  
+- name: Init kubernetes cluster 
+  shell: kubeadm init --control-plane-endpoint={{ control_plane_ip }}:6443 --upload-certs --apiserver-advertise-address={{ ansible_host }} --pod-network-cidr={{ pod_network }} 
+  run_once: yes 
+  delegate_to: "kmaster_control"  
+- name: Create directory for kube config 
+  file: 
+    path: /root/.kube 
+    state: directory 
+    owner: root 
+    group: root 
+    mode: 0755 
+- name: Copy /etc/kubernetes/admin.conf to user home directory 
+  become_user: root 
+  become_method: sudo 
+  become: yes 
+  when: "'masters' in group_names or 'kmaster' in group_names" 
+  copy: 
+    src: /etc/kubernetes/admin.conf 
+    dest: /root/.kube/config 
+    remote_src: yes 
+    owner: root 
+    group: root 
+    mode: '0644' 
