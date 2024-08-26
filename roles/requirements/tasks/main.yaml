@@ -1,31 +1,27 @@
 --- 
 - name: Disable swap 
   shell: swapoff -a 
+  
 - name: Remove swap entry from /etc/fstab 
   lineinfile: 
     dest: /etc/fstab 
     regexp: swap 
     state: absent 
+    
 - name: Install ipvsadm 
   apt: 
     name: 
       - ipset 
       - ipvsadm 
     state: present 
-- name: Modprode Kernel Module for IPVS 
-  shell: | 
-    modprobe -- ip_vs 
-    modprobe -- ip_vs_rr 
-    modprobe -- ip_vs_wrr 
-    modprobe -- ip_vs_sh 
-    modprobe -- nf_conntrack 
-- name: Add the overlay and br_netfilter module 
+
+- name: Add the br_netfilter module 
   community.general.modprobe: 
     name: "{{ item }}" 
     state: present 
   with_items: 
-    - overlay 
     - br_netfilter 
+    
 - name: configure iproute table 
   sysctl: 
     name: "{{ item.name }}" 
@@ -33,11 +29,11 @@
     sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf 
     reload: yes 
   loop: 
-    - { name: 'net.bridge.bridge-nf-call-ip6tables' } 
     - { name: 'net.ipv4.ip_forward' } 
-    - { name: 'net.bridge.bridge-nf-call-iptables' } 
+    
 - name: Read values from all system directories 
   shell: sysctl --system 
+  
 - name: Install packages to allow apt to use a repository over HTTPS 
   apt:
     name:
@@ -47,43 +43,48 @@
       - software-properties-common 
     state: present 
     update_cache: yes 
-- name: Add an Apt signing key, {{ ubuntu_version }} 
+    
+- name: Add an Apt signing key k8s
   ansible.builtin.apt_key: 
-    url: https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/{{ ubuntu_version }}/Release.key 
-    state: present 
+    url: https://pkgs.k8s.io/core:/stable:/{{ kubernetes_version }}/deb/Release.key
+    keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    state: present
+  environment:
+    - "{{ proxy_env }}"
+
+- name: Add an Apt signing key crio
+  ansible.builtin.apt_key: 
+    url: https://pkgs.k8s.io/addons:/cri-o:/{{ project_path }}/deb/Release.key
+    keyring: /etc/apt/keyrings/cri-o-apt-keyring.gpg
   environment: 
     - "{{ proxy_env }}" 
-- name: Add an Apt signing key, cri-o version{{ crio_version }}, {{ ubuntu_version }} 
-  ansible.builtin.apt_key: 
-    url: https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/{{ crio_version }}/{{ ubuntu_version }}/Release.key 
-    state: present 
-  environment: 
-    - "{{ proxy_env }}" 
-- name: Run the equivalent of "apt-get update" 
-  apt: 
-    update_cache: yes 
-- name: Add sperootfied repository {{ ubuntu_version }} 
+    
+- name: Add sperootfied repository k8s
   ansible.builtin.apt_repository: 
-    repo: "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/{{ ubuntu_version }}/ /" 
-    state: present 
-    update_cache: yes 
-    filename: devel:kubic:libcontainers:stable.list 
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ kubernetes_version }}/deb/ /"
+    state: present
+    update_cache: yes
+    filename: kubernetes.list
   environment:
     - "{{ proxy_env }}" 
-- name: Add sperootfied repository cri-o {{ ubuntu_version }} 
+    
+- name: Add sperootfied repository cri-o
   ansible.builtin.apt_repository: 
-    repo: "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/{{ crio_version }}/{{ ubuntu_version }}/ /" 
-    state: present 
-    update_cache: yes 
-    filename: devel:kubic:libcontainers:stable:cri-o:{{ crio_version }}.list 
+    repo: "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/{{ project_path }}/deb/ /"
+    state: present
+    update_cache: yes
+    filename: cri-o.list
   environment: 
     - "{{ proxy_env }}" 
-- name: ensure cri-o cri-o-runc cri-tools  are installed 
+
+- name: Run the equivalent of "apt-get update"
+  apt:
+    update_cache: yes
+
+- name: ensure cri-o is installed 
   apt: 
     name: 
      - cri-o 
-     - cri-o-runc 
-     - cri-tools 
     state: present 
     update_cache: yes 
   register: apt_crio 
@@ -91,53 +92,37 @@
   delay: 5 
   until: apt_crio is not failed 
   ignore_errors: true 
+  
 - name: add proxy for crio 
   shell: | 
-    mkdir /etc/systemd/system/crio.service.d 
+    mkdir -p /etc/systemd/system/crio.service.d 
     cat <<EOF | sudo tee /etc/systemd/system/crio.service.d/http-proxy.conf 
     [Service] 
     Environment="HTTP_PROXY=10.26.2.55:8080" 
     Environment="HTTPS_PROXY=10.26.2.55:8080" 
     Environment="NO_PROXY=10.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,localhost,127.0.0.1" 
     EOF 
-- name: Configure Cri-o daemon 
-  shell: | 
-    cat <<EOF | sudo tee /etc/crio/crio.conf.d/02-cgroup-manager.conf 
-    [crio.runtime] 
-    conmon_cgroup = "pod" 
-    cgroup_manager = "systemd" 
-    EOF 
+
 - name: Restart Crio 
   systemd: 
     name: crio 
     state: restarted 
     enabled: yes 
     daemon-reload: yes 
-- name: Add gpg key for kubernetes repository 
-  apt_key: 
-    url: https://packages.cloud.google.com/apt/doc/apt-key.gpg 
-    state: present 
-- name: Run the equivalent of "apt-get update" 
-  apt: 
-    update_cache: yes 
-- name: Add Kubernetes repository 
-  ansible.builtin.apt_repository: 
-    repo: deb http://apt.kubernetes.io/ kubernetes-xenial main 
-    state: present 
-    update_cache: yes 
-    filename: kubernetes 
+    
 - name: Install kubelet, kubeadm and kubectl 
   apt: 
     name: 
-      - kubeadm={{ kubeadm_version }} 
-      - kubectl={{ kubectl_version }} 
-      - kubelet={{ kubelet_version }} 
+      - kubeadm
+      - kubectl
+      - kubelet
     state: present 
   register: apt_k8s 
   retries: 10 
   delay: 5 
   until: apt_k8s is not failed 
   ignore_errors: true 
+  
 - name: Enable kubelet service 
   service: 
     name: kubelet 
@@ -146,9 +131,11 @@
 - name: Reset existing cluster if already configure 
   shell: kubeadm reset -f 
   ignore_errors: true 
+  
 - name: Re run the task if Crio install failed 
   include_tasks: ./roles/requirement/tasks/main.yaml 
   when: "apt_crio is failed" 
+  
 - name: Re run the task if Kubernetes install failed 
   include_tasks: ./roles/requirement/tasks/main.yaml 
   when: "apt_k8s is failed"
