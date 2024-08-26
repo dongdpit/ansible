@@ -1,0 +1,2 @@
+--- 
+part_number: "{{ ansible_facts['devices']['sda']['partitions'] | length + 1 }}" 
