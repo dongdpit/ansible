@@ -1,0 +1,38 @@
+--- 
+- name: Print join command 
+  shell: kubeadm token create --print-join-command 
+  register: kubernetes_join_command 
+  run_once: yes 
+  delegate_to: "kmaster_control" 
+ 
+- name: Copy join command to local 
+  become: no 
+  local_action: copy content="{{ kubernetes_join_command.stdout_lines[0] }}" dest="/tmp/kubernetes_join_command" mode=0777 
+  run_once: yes 
+  delegate_to: "kmaster_control" 
+ 
+- name: Generate certificate key 
+  shell: kubeadm init phase upload-certs --upload-certs 
+  register: kubernetes_certificate_key 
+  run_once: yes 
+  delegate_to: "kmaster_control" 
+ 
+- name: Reset existing cluster 
+  when: "'workers' in group_names or 'masters' in group_names" 
+  shell: kubeadm reset -f 
+ 
+- name: Copy join command to workers 
+  when: "'workers' in group_names or 'masters' in group_names" 
+  copy: 
+    src: /tmp/kubernetes_join_command 
+    dest: /tmp/kubernetes_join_command 
+    mode: 0777 
+ 
+- name: Joint masters 
+  become: yes 
+  when: "'masters' in group_names" 
+  shell: "{{ kubernetes_join_command.stdout_lines[0] }} --control-plane --certificate-key {{ kubernetes_certificate_key.stdout_lines[2] }} --apiserver-advertise-address={{ ansible_host }}" 
+- name: Join workers 
+  become: yes 
+  when: "'workers' in group_names" 
+  shell: sh /tmp/kubernetes_join_command 
