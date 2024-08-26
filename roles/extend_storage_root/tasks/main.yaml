@@ -1,0 +1,32 @@
+
+- name: Check free space which didn't partitioned 
+  shell: parted /dev/sda unit GB print free | grep 'Free Space' | tail -n1 | awk '{print $3}'| grep -Eo '[+-]?[0-9]+([.][0-9]+)?' 
+  register: free_space  
+- name: Create new partition 
+  shell: /bin/echo -e "n\np\n{{ part_number }}\n\n\nw" | sudo fdisk /dev/sda 
+  when: free_space.stdout > "1"  
+- name: Get Volume Group root system name 
+  shell: vgdisplay | grep "VG Name" | awk '{print $3}' 
+  register: vg_name 
+  when: free_space.stdout > "1"  
+- name: Get Logical Volume name 
+  shell: lvdisplay | grep "LV Path" | awk '{print $3}' 
+  register: lv 
+  when: free_space.stdout > "1"  
+- name: Create Physical Volume 
+  shell: pvcreate /dev/sda"{{ part_number }}" 
+  when: free_space.stdout > "1" 
+- name: Volume Group extend 
+  shell: vgextend "{{ vg_name.stdout }}" /dev/sda"{{ part_number }}" 
+  when: free_space.stdout > "1" 
+- name: Extend the logical volume to consume all remaining space in the volume group 
+  lvol: 
+    vg: "{{ vg_name.stdout }}" 
+    lv: "{{ lv.stdout }}" 
+    size: +100%FREE 
+    state: present 
+  when: free_space.stdout > "1" 
+- name: Check done 
+  ansible.builtin.debug: 
+    msg: You don't have enough free space 
+  when: free_space.stdout < "1" 
