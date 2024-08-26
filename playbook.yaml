@@ -33,4 +33,4 @@
   hosts: kworker01
 #  become: yes
   roles:
-    - joint_node
+    - join_node
