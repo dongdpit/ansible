@@ -36,3 +36,16 @@
     owner: root 
     group: root 
     mode: '0644' 
+
+- name: Add KUBE_EDITOR in .bashrc
+  lineinfile:
+    path: /root/.bashrc
+    line: "export KUBE_EDITOR=nano"
+    state: present
+
+- name: Add kubectl completion in .bashrc
+  lineinfile:
+    path: /root/.bashrc
+    line: "source <(kubectl completion bash)"
+    state: present
+
