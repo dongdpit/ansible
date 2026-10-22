@@ -1,4 +1,16 @@
 --- 
+- name: Disable other container if exists
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: no
+  loop:
+    - containerd
+#    - docker
+#    - cri-docker
+#    - cri-docker.socket
+  ignore_errors: yes
+
 - name: Print join command 
   shell: kubeadm token create --print-join-command 
   register: kubernetes_join_command 
